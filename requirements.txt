@@ -1,0 +1,5 @@
+numpy>=2.0
+opencv-python>=4.9
+imageio>=2.34
+casadi>=3.6
+torch>=2.2
