@@ -11,6 +11,7 @@ Run:  python -m pytest tests/test_dstar.py -q   (or  python tests/test_dstar.py)
 from __future__ import annotations
 
 import heapq
+import itertools
 import math
 import sys
 from pathlib import Path
@@ -67,21 +68,26 @@ def _setup(seed=0):
             return gp, s, g, rng
 
 
+def _penalties(gp, rng):
+    """Unit costs, the planner's proximity cost, and an arbitrary random cost field."""
+    return {"unit": None, "proximity": gp.penalty, "random": rng.uniform(0, 3, gp.static.shape)}
+
+
 def test_static_optimal():
-    for seed in range(5):
-        gp, s, g, _ = _setup(seed)
-        ds = DStarLite(gp.static, s, g)
+    for seed, kind in itertools.product(range(5), ("unit", "proximity", "random")):
+        gp, s, g, rng = _setup(seed)
+        ds = DStarLite(gp.static, s, g, _penalties(gp, rng)[kind])
         ds.compute()
         p = ds.path()
         check_valid(ds, p)
         ref = dijkstra(ds, s, g)
-        assert abs(path_cost(ds, p) - ref) < 1e-9, (seed, path_cost(ds, p), ref)
+        assert abs(path_cost(ds, p) - ref) < 1e-9 * ref, (seed, kind, path_cost(ds, p), ref)
 
 
 def test_incremental_block_and_unblock():
-    for seed in range(5):
+    for seed, kind in itertools.product(range(5), ("unit", "proximity", "random")):
         gp, s, g, rng = _setup(seed)
-        ds = DStarLite(gp.static, s, g)
+        ds = DStarLite(gp.static, s, g, _penalties(gp, rng)[kind])
         ds.compute()
         p = ds.path()
         # drop a 5x5 blob onto the current path, well ahead of the robot
@@ -95,13 +101,15 @@ def test_incremental_block_and_unblock():
         ds.compute()
         p2 = ds.path()
         check_valid(ds, p2)
-        assert abs(path_cost(ds, p2) - dijkstra(ds, ds.start, g)) < 1e-9, ("block", seed)
+        ref = dijkstra(ds, ds.start, g)
+        assert abs(path_cost(ds, p2) - ref) < 1e-9 * ref, ("block", seed, kind)
 
         ds.set_cells(blob, False)
         ds.compute()
         p3 = ds.path()
         check_valid(ds, p3)
-        assert abs(path_cost(ds, p3) - dijkstra(ds, ds.start, g)) < 1e-9, ("unblock", seed)
+        ref = dijkstra(ds, ds.start, g)
+        assert abs(path_cost(ds, p3) - ref) < 1e-9 * ref, ("unblock", seed, kind)
 
 
 def test_planner_never_frees_static_cells():

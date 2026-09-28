@@ -3,8 +3,12 @@
 Robot: unicycle model for a skid-steer base of the AgileX Scout Mini's footprint,
 approximated by a disc. State (x, y, theta), control (v, omega), 10 Hz.
 
-Workers: discs that walk between random aisle points and pause, sensed by the
-robot only through its LiDAR.
+Workers: discs that walk between random aisle points and pause. By default they
+yield: a worker whose next step would touch the robot stops instead, and after
+WORKER_PATIENCE seconds chooses another destination. Without yielding, workers walk
+straight through a robot that is stationary or even backing away, and those contacts
+measure the environment rather than the controller. Without patience, a worker and
+a robot that each wait for the other stand still until the episode times out.
 
 LiDAR: 2D ray casting against racks, walls and workers.
 
@@ -26,12 +30,13 @@ ROBOT_R = 0.33           # Scout Mini is about 0.61 m x 0.58 m
 V_MAX, W_MAX = 1.0, 1.5  # m/s, rad/s
 A_MAX, ALPHA_MAX = 1.5, 3.0  # per-second limits on the change of v and omega
 
-LIDAR_BEAMS = 36
+LIDAR_BEAMS = 180      # 2 deg; at 36 beams rack corners fell between rays and were never seen
 LIDAR_FOV = np.deg2rad(360.0)
 LIDAR_RANGE = 8.0
 
 WORKER_R = 0.30
 WORKER_SPEED = (0.6, 1.1)
+WORKER_PATIENCE = 2.0    # s a worker waits for the robot before choosing another destination
 GOAL_TOL = 0.4
 
 
@@ -41,6 +46,7 @@ class Worker:
     target: np.ndarray
     speed: float
     pause: float = 0.0
+    waited: float = 0.0
 
 
 def _ray_rect(o: np.ndarray, d: np.ndarray, r: Rect) -> np.ndarray:
@@ -68,9 +74,10 @@ def _ray_circle(o: np.ndarray, d: np.ndarray, c: np.ndarray, rad: float) -> np.n
 
 class GreenhouseSim:
     def __init__(self, house: Greenhouse | None = None, n_workers: int = 0,
-                 max_steps: int = 900, seed: int | None = None):
+                 max_steps: int = 900, seed: int | None = None, worker_yield: bool = True):
         self.house = house or Greenhouse()
         self.n_workers = n_workers
+        self.worker_yield = worker_yield
         self.max_steps = max_steps
         self.rng = np.random.default_rng(seed)
         rel = np.linspace(-LIDAR_FOV / 2, LIDAR_FOV / 2, LIDAR_BEAMS, endpoint=False)
@@ -131,14 +138,18 @@ class GreenhouseSim:
 
     def observe(self) -> dict:
         return {"state": self.state.copy(), "vel": self.vel.copy(), "goal": self.goal.copy(),
-                "lidar": self.lidar(), "workers": self.sensed_workers()}
+                "lidar": self.lidar(), "lidar_rel": self.beam_rel,
+                "workers": self.sensed_workers()}
 
     # ---------------------------------------------------------------- dynamics
-    def collided(self) -> bool:
+    def collided(self) -> str | None:
+        """None, or what the robot touched: "static" (rack or wall) or "worker"."""
         p = self.state[:2]
         if self.house.clearance(p) < ROBOT_R:
-            return True
-        return any(np.linalg.norm(w.pos - p) < ROBOT_R + WORKER_R for w in self.workers)
+            return "static"
+        if any(np.linalg.norm(w.pos - p) < ROBOT_R + WORKER_R for w in self.workers):
+            return "worker"
+        return None
 
     def step(self, cmd) -> tuple[dict, dict]:
         """cmd = (v, omega) in physical units; clipped to limits and rate limits."""
@@ -167,12 +178,20 @@ class GreenhouseSim:
                 wk.pause = self.rng.uniform(0.0, 3.0)
                 wk.target = self._worker_target(wk.pos)
                 continue
-            wk.pos = wk.pos + to / dist * min(wk.speed * DT, dist)
+            nxt = wk.pos + to / dist * min(wk.speed * DT, dist)
+            if self.worker_yield and np.linalg.norm(nxt - self.state[:2]) < ROBOT_R + WORKER_R + 0.10:
+                wk.waited += DT        # step would touch the robot: wait
+                if wk.waited >= WORKER_PATIENCE:
+                    wk.target, wk.waited = self._worker_target(wk.pos), 0.0
+                continue
+            wk.waited = 0.0
+            wk.pos = nxt
 
         self.t += 1
         reached = bool(np.linalg.norm(self.state[:2] - self.goal) < GOAL_TOL)
-        crash = self.collided()
+        hit = self.collided()
         timeout = self.t >= self.max_steps
-        info = {"reached": reached, "collision": crash, "timeout": timeout and not reached,
+        info = {"reached": reached, "collision": hit is not None, "hit": hit,
+                "timeout": timeout and not reached and hit is None,
                 "t": self.t, "path_len": self.path_len}
         return self.observe(), info

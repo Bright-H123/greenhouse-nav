@@ -47,5 +47,7 @@ def run_episode(sim: GreenhouseSim, controller, seed: int, render: bool = False,
         if info["reached"] or info["collision"] or info["timeout"]:
             break
     info.update(replans=replans, plan_ms=1000 * t_plan / max(replans, 1),
+                fallbacks=planner.fallbacks if planner else 0,
+                mean_speed=info["path_len"] / max(sim.t * 0.1, 1e-9),
                 ctrl_ms=1000 * t_ctrl / max(sim.t, 1), min_lidar=min_clear, seed=seed)
     return info, frames

@@ -1,8 +1,17 @@
 """Global planner: an inflated occupancy grid of the greenhouse plus D* Lite.
 
 Static layer: racks and walls, inflated by the robot radius and a safety margin.
+Beyond the inflated edge, a cost that decays exponentially with distance (as in the
+ROS 2 Nav2 inflation layer) keeps paths near the aisle centre. Without it the
+shortest path runs along the inflated edge, 0.5 m from the rack for a whole row.
 Dynamic layer: workers the LiDAR currently sees, inflated by robot + worker radius.
 Each replan updates only the cells whose status changed and lets D* Lite repair.
+
+If the worker layer seals the robot in (a worker stands beside it and the inflated
+rack is on the other side), D* Lite has no path and the robot would wait for as
+long as the worker does. In that case the planner falls back to a second D* Lite
+that holds the static layer only, and spacing to the worker is left to the local
+controller, which sees the worker in its LiDAR.
 """
 
 from __future__ import annotations
@@ -16,6 +25,8 @@ from nav.world import X_MAX, X_MIN, Y_MAX, Y_MIN, Greenhouse
 RES = 0.2                 # m per cell
 STATIC_MARGIN = 0.15
 DYNAMIC_MARGIN = 0.25
+PROX_WEIGHT = 2.0         # extra cost factor at the inflated edge
+PROX_DECAY = 3.0          # 1/m, Nav2's default cost_scaling_factor
 
 
 class GridPlanner:
@@ -27,11 +38,13 @@ class GridPlanner:
         self.cx = X_MIN + (jj + 0.5) * res
         self.cy = Y_MIN + (ii + 0.5) * res
         inflate = ROBOT_R + STATIC_MARGIN
-        self.static = np.zeros((self.H, self.W), bool)
+        clear = np.full((self.H, self.W), np.inf)
         for r in house.obstacles:
             dx = np.maximum.reduce([r.x0 - self.cx, np.zeros_like(self.cx), self.cx - r.x1])
             dy = np.maximum.reduce([r.y0 - self.cy, np.zeros_like(self.cy), self.cy - r.y1])
-            self.static |= np.hypot(dx, dy) < inflate
+            clear = np.minimum(clear, np.hypot(dx, dy))
+        self.static = clear < inflate
+        self.penalty = PROX_WEIGHT * np.exp(-PROX_DECAY * np.maximum(clear - inflate, 0.0))
         self.static[0, :] = self.static[-1, :] = True
         self.static[:, 0] = self.static[:, -1] = True
         self.dstar: DStarLite | None = None
@@ -56,8 +69,11 @@ class GridPlanner:
         self.dynamic[:] = False
         s = self._nearest_free(self.to_cell(start), self.static)
         g = self._nearest_free(self.to_cell(goal), self.static)
-        self.dstar = DStarLite(self.static, s, g)
+        self.dstar = DStarLite(self.static, s, g, self.penalty)
         self.dstar.compute()
+        self.static_dstar = DStarLite(self.static, s, g, self.penalty)
+        self.static_dstar.compute()
+        self.fallbacks = 0
 
     def _worker_mask(self, workers, robot_cell) -> np.ndarray:
         m = np.zeros_like(self.static)
@@ -79,4 +95,10 @@ class GridPlanner:
         d.set_cells(map(tuple, np.argwhere(~new_dyn & self.dynamic & ~self.static)), False)
         self.dynamic = new_dyn
         d.compute()
-        return [self.to_world(c) for c in d.path()]
+        cells = d.path()
+        if not cells:
+            self.fallbacks += 1
+            self.static_dstar.move_start(cell)
+            self.static_dstar.compute()
+            cells = self.static_dstar.path()
+        return [self.to_world(c) for c in cells]

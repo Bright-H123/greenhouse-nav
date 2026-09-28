@@ -5,7 +5,9 @@ the affected part of the search is repaired instead of replanning from scratch.
 That incremental repair is what makes it suited to a greenhouse where workers
 walk into the aisle ahead of the robot.
 
-Diagonal moves may not cut the corner of a blocked cell.
+Diagonal moves may not cut the corner of a blocked cell. A move into cell b costs
+its length times (1 + penalty[b]); penalties are non-negative, so the octile
+heuristic stays admissible and consistent.
 """
 
 from __future__ import annotations
@@ -22,8 +24,11 @@ NBRS = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
 
 
 class DStarLite:
-    def __init__(self, blocked: np.ndarray, start: tuple[int, int], goal: tuple[int, int]):
+    def __init__(self, blocked: np.ndarray, start: tuple[int, int], goal: tuple[int, int],
+                 penalty: np.ndarray | None = None):
         self.blocked = blocked.copy()
+        self.scale = 1.0 + (np.zeros(blocked.shape) if penalty is None else penalty)
+        assert (self.scale >= 1.0).all(), "penalties must be non-negative"
         self.H, self.W = blocked.shape
         self.g = np.full(blocked.shape, INF)
         self.rhs = np.full(blocked.shape, INF)
@@ -69,8 +74,8 @@ class DStarLite:
         if di and dj:
             if self.blocked[a[0] + di, a[1]] or self.blocked[a[0], a[1] + dj]:
                 return INF
-            return SQ2
-        return 1.0
+            return SQ2 * self.scale[b]
+        return self.scale[b]
 
     def neighbours(self, s):
         for di, dj in NBRS:
