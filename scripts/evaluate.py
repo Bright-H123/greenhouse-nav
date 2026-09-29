@@ -43,6 +43,20 @@ def make(method: str):
         elif method == "mpc_nopred":
             from nav.mpc import NMPC
             _CACHE[method] = (NMPC(predict_workers=False), True)
+        elif method.startswith("td3_"):
+            # td3_<mode>_s<seed>, e.g. td3_goal_s0 or td3_waypoint_s1; loads
+            # runs/<method>/best.pt. The end-to-end variant runs with no planner.
+            import torch
+            from nav.td3 import TD3, TD3Controller
+            torch.set_num_threads(1)
+            mode = "waypoint" if "waypoint" in method else "goal"
+            ckpt = ROOT / "runs" / method / "best.pt"
+            if not ckpt.exists():
+                raise FileNotFoundError(ckpt)
+            from nav.rl_env import N_BINS
+            agent = TD3(N_BINS + 5, 2)
+            agent.load(ckpt)
+            _CACHE[method] = (TD3Controller(agent, mode), mode == "waypoint")
         else:
             raise ValueError(method)
     return _CACHE[method]
