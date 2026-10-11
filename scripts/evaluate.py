@@ -66,11 +66,14 @@ def run_one(job):
     method, aisle, n_workers, seed = job
     from nav.runner import run_episode
     from nav.sim import GreenhouseSim
-    from nav.world import Greenhouse
+    from nav.world import Greenhouse, rows_to_fill
     ctrl, use_planner = make(method)
-    sim = GreenhouseSim(Greenhouse(row_aisle=aisle), n_workers=n_workers, max_steps=900)
+    # a narrower aisle adds rows rather than opening a bypass, so the sweep
+    # really does raise the density; rows_to_fill(3.0) is the default 4 rows
+    house = Greenhouse(row_aisle=aisle, rows=rows_to_fill(aisle))
+    sim = GreenhouseSim(house, n_workers=n_workers, max_steps=900)
     info, _ = run_episode(sim, ctrl, seed=seed, use_planner=use_planner)
-    return {"method": method, "aisle": aisle, "workers": n_workers, "seed": seed,
+    return {"method": method, "aisle": aisle, "rows": house.rows, "workers": n_workers, "seed": seed,
             "reached": bool(info["reached"]), "hit": info["hit"], "timeout": bool(info["timeout"]),
             "time": info["t"] * 0.1, "path_len": info["path_len"], "mean_speed": info["mean_speed"],
             "min_lidar": info["min_lidar"], "ctrl_ms": info["ctrl_ms"], "plan_ms": info["plan_ms"],

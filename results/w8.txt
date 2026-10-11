@@ -1,0 +1,18 @@
+aisle  wk method       success        95% CI  rack worker t/out  time s  speed  clear ctrl ms
+---------------------------------------------------------------------------------------------
+  3.0   8 rpp          50/50   [  93%, 100%]     0      0     0    28.4   0.67   0.45     0.2
+  3.0   8 mpc          50/50   [  93%, 100%]     0      0     0    24.6   0.73   0.55    19.7
+  3.0   8 td3_waypoint_s0  46/50   [  81%,  97%]     0      4     0    20.7   0.88   0.63     0.2
+  3.0   8 td3_waypoint_s1  45/50   [  79%,  96%]     0      5     0    19.6   0.91   0.51     0.2
+  3.0   8 td3_waypoint_s2  48/50   [  87%,  99%]     0      2     0    20.6   0.89   0.56     0.2
+  3.0   8 td3_goal_s0  46/50   [  81%,  97%]     0      2     2    21.1   0.87   0.44     0.1
+  3.0   8 td3_goal_s1  44/50   [  76%,  94%]     0      5     1    19.9   0.92   0.51     0.1
+  3.0   8 td3_goal_s2  46/50   [  81%,  97%]     0      3     1    20.6   0.93   0.53     0.1
+          mpc vs rpp: only rpp 0, only mpc 0, exact McNemar p = 1
+          td3_waypoint_s0 vs rpp: only rpp 4, only td3_waypoint_s0 0, exact McNemar p = 0.125
+          td3_waypoint_s1 vs rpp: only rpp 5, only td3_waypoint_s1 0, exact McNemar p = 0.0625
+          td3_waypoint_s2 vs rpp: only rpp 2, only td3_waypoint_s2 0, exact McNemar p = 0.5
+          td3_goal_s0 vs rpp: only rpp 4, only td3_goal_s0 0, exact McNemar p = 0.125
+          td3_goal_s1 vs rpp: only rpp 6, only td3_goal_s1 0, exact McNemar p = 0.0312
+          td3_goal_s2 vs rpp: only rpp 4, only td3_goal_s2 0, exact McNemar p = 0.125
+

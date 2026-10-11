@@ -5,8 +5,17 @@ The default layout reproduces the Gazebo world `melon.world` from the original
 left and a right rack of 7 m x 1 m, separated by a 4 m central aisle, with 3 m
 aisles between rows. Rack and wall coordinates below were read from that file.
 
-Two aisle widths are exposed as parameters so the same house can be made denser
-for the aisle-width sweep. Rack size, row count and the outer walls stay fixed.
+Two aisle widths are exposed as parameters. Narrowing `row_aisle` on its own does
+NOT make the house denser: the racks keep their size, so the block of rows simply
+packs tighter and leaves more open floor above and below it, which a planner just
+routes around. Measured, occupancy stays at 12.3% from a 3.0 m aisle down to a
+1.3 m one while the free margin above and below grows from 6.0 m to 11.1 m, and
+both classical controllers stayed at 50/50 across that range.
+
+`rows_to_fill` therefore sets the row count so the block keeps spanning the same
+extent as the original layout, and narrowing the aisle adds rows instead of
+opening up a bypass. That is what the aisle sweep uses. The default layout is
+untouched and still reproduces melon.world.
 """
 
 from __future__ import annotations
@@ -22,6 +31,7 @@ RACK_LEN = 7.0          # along x
 RACK_DEPTH = 1.0        # along y
 ROWS = 4
 ROW_CENTRE_Y = 0.5      # mean of the original rack centres 6.5, 2.5, -1.5, -5.5
+BLOCK_SPAN = 13.0       # y extent the four original rows occupy, 6.5+0.5 to -5.5-0.5
 
 
 @dataclass
@@ -37,16 +47,24 @@ class Rect:
         return np.array([(self.x0 + self.x1) / 2, (self.y0 + self.y1) / 2])
 
 
+def rows_to_fill(row_aisle: float, span: float = BLOCK_SPAN) -> int:
+    """Row count that keeps the block spanning `span`, so a narrower aisle means
+    more rows rather than more open floor around them."""
+    pitch = RACK_DEPTH + row_aisle
+    return max(2, int(round((span - RACK_DEPTH) / pitch)) + 1)
+
+
 @dataclass
 class Greenhouse:
     row_aisle: float = 3.0      # gap between consecutive rows of racks
     centre_aisle: float = 4.0   # gap between the left and right rack of a row
+    rows: int = ROWS            # see rows_to_fill for the density sweep
     racks: list[Rect] = field(default_factory=list)
     walls: list[Rect] = field(default_factory=list)
 
     def __post_init__(self):
         pitch = RACK_DEPTH + self.row_aisle
-        ys = ROW_CENTRE_Y + pitch * (np.arange(ROWS) - (ROWS - 1) / 2)
+        ys = ROW_CENTRE_Y + pitch * (np.arange(self.rows) - (self.rows - 1) / 2)
         half_gap = self.centre_aisle / 2
         self.racks = []
         for y in ys[::-1]:                       # top row first, like melon.world
