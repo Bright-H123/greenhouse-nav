@@ -14,8 +14,7 @@ global plan at all.
 > that code is not included here. This version rebuilds the same greenhouse layout
 > in a lightweight 2D simulator, adds the classical D* Lite + MPC pipeline and
 > dynamic obstacles, and every number below is produced by the code in this
-> repository. It was built with AI assistance; the experimental design, the
-> verification protocol and all reported numbers are mine.
+> repository.
 
 ## Demo
 
